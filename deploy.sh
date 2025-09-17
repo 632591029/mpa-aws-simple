@@ -103,9 +103,39 @@ cp -r node_modules/.prisma .aws-sam/build/NestJSFunction/node_modules/
 echo "📋 Final verification in SAM build:"
 echo "- Linux binary: $([ -f .aws-sam/build/NestJSFunction/node_modules/.prisma/client/libquery_engine-linux-arm64-openssl-3.0.x.so.node ] && echo '✅' || echo '❌')"
 
-# 8. Deploy
+# 8. Deploy with environment variables
 echo "🚀 Deploying to AWS..."
-echo "y" | sam deploy
+
+# 检查环境变量
+if [ -f .env ]; then
+    echo "📋 Loading environment variables from .env file..."
+    source .env
+    
+    # 验证必需的环境变量
+    if [ -z "$DATABASE_ENDPOINT" ] || [ -z "$DATABASE_USER" ] || [ -z "$DATABASE_PASSWORD" ]; then
+        echo "❌ Missing required database environment variables!"
+        echo "Please set DATABASE_ENDPOINT, DATABASE_USER, and DATABASE_PASSWORD in .env file"
+        exit 1
+    fi
+    
+    echo "✅ Environment variables loaded"
+    echo "- DATABASE_ENDPOINT: ${DATABASE_ENDPOINT}"
+    echo "- DATABASE_USER: ${DATABASE_USER}"
+    echo "- GITHUB_TOKEN: $([ -n "$GITHUB_TOKEN" ] && echo 'Set' || echo 'Not set')"
+else
+    echo "❌ .env file not found!"
+    echo "Please create .env file with required environment variables"
+    echo "You can copy from .env.example and fill in your values"
+    exit 1
+fi
+
+# 使用环境变量部署
+echo "y" | sam deploy \
+    --parameter-overrides \
+    DatabaseEndpoint="$DATABASE_ENDPOINT" \
+    DatabaseUser="$DATABASE_USER" \
+    DatabasePassword="$DATABASE_PASSWORD" \
+    GithubToken="${GITHUB_TOKEN:-''}"
 
 echo "✅ Deployment completed!"
 echo "📋 Check CloudWatch logs if there are any Prisma connection issues."

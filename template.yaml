@@ -2,6 +2,24 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: NestJS Lambda Application
 
+# Parameters for environment variables
+Parameters:
+  DatabaseEndpoint:
+    Type: String
+    Description: RDS database endpoint
+  DatabaseUser:
+    Type: String
+    Description: Database username
+  DatabasePassword:
+    Type: String
+    Description: Database password
+    NoEcho: true
+  GithubToken:
+    Type: String
+    Description: GitHub personal access token (optional)
+    Default: ""
+    NoEcho: true
+
 Globals:
   Function:
     Timeout: 30
@@ -205,10 +223,10 @@ Resources:
         Variables:
           DATABASE_URL: !Sub
             - postgresql://${DatabaseUser}:${DatabasePassword}@${DatabaseEndpoint}:5432/postgres
-            - DatabaseEndpoint: ${DATABASE_ENDPOINT}
-              DatabaseUser: ${DATABASE_USER}
-              DatabasePassword: ${DATABASE_PASSWORD}
-          GITHUB_TOKEN: ${GITHUB_TOKEN}
+            - DatabaseEndpoint: !Ref DatabaseEndpoint
+              DatabaseUser: !Ref DatabaseUser
+              DatabasePassword: !Ref DatabasePassword
+          GITHUB_TOKEN: !Ref GithubToken
       VpcConfig:
         SecurityGroupIds:
           - !Ref LambdaSecurityGroup
