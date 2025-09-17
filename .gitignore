@@ -1,0 +1,31 @@
+# Build outputs
+/dist
+/node_modules
+
+# AWS SAM
+.aws-sam/
+layers/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# IDE
+/.idea
+.vscode/
+*.sublime-workspace
+
+# Environment variables
+.env*
+!.env.example
+
+# Test coverage
+/coverage
+
+# Temporary files
+.temp
+.tmp
+tmp/
+temp/
