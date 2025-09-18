@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import serverlessExpress from 'serverless-http';
+import * as serverlessExpress from 'serverless-http';
 
 let server: any;
 

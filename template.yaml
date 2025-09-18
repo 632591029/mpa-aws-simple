@@ -4,16 +4,12 @@ Description: NestJS Lambda Application
 
 # Parameters for environment variables
 Parameters:
-  DatabaseEndpoint:
-    Type: String
-    Description: RDS database endpoint
-  DatabaseUser:
-    Type: String
-    Description: Database username
   DatabasePassword:
     Type: String
-    Description: Database password
+    Description: Database password for PostgreSQL
     NoEcho: true
+    MinLength: 8
+    Default: "MySecurePassword123"
   GithubToken:
     Type: String
     Description: GitHub personal access token (optional)
@@ -27,12 +23,6 @@ Globals:
     Runtime: nodejs20.x
     Architectures:
       - arm64
-
-Parameters:
-  VPCStackName:
-    Type: String
-    Default: mpa-demo-vpc
-    Description: Name of the VPC stack
 
 Resources:
 
@@ -210,6 +200,44 @@ Resources:
           ToPort: 5432
           SourceSecurityGroupId: !Ref LambdaSecurityGroup
 
+  # RDS Subnet Group (数据库子网组)
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS database
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-subnet-group
+
+  # RDS Database Instance (在同一VPC内创建数据库)
+  PostgreSQLDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub ${AWS::StackName}-postgres
+      DBInstanceClass: db.t4g.micro  # 最便宜的ARM实例
+      Engine: postgres
+      EngineVersion: '15.14'
+      AllocatedStorage: 20
+      StorageType: gp2
+      MasterUsername: postgres
+      MasterUserPassword: !Ref DatabasePassword
+      DBName: postgres
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      DeleteAutomatedBackups: true
+      DeletionProtection: false
+      PubliclyAccessible: false  # 只能内网访问
+      StorageEncrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-postgres
+
   # Lambda Function
   NestJSFunction:
     Type: AWS::Serverless::Function
@@ -221,11 +249,7 @@ Resources:
         - !Ref DependenciesLayer
       Environment:
         Variables:
-          DATABASE_URL: !Sub
-            - postgresql://${DatabaseUser}:${DatabasePassword}@${DatabaseEndpoint}:5432/postgres
-            - DatabaseEndpoint: !Ref DatabaseEndpoint
-              DatabaseUser: !Ref DatabaseUser
-              DatabasePassword: !Ref DatabasePassword
+          DATABASE_URL: !Sub "postgresql://postgres:${DatabasePassword}@${PostgreSQLDatabase.Endpoint.Address}:5432/postgres"
           GITHUB_TOKEN: !Ref GithubToken
       VpcConfig:
         SecurityGroupIds:
@@ -264,3 +288,15 @@ Outputs:
     Value: !Ref VPC
     Export:
       Name: !Sub ${AWS::StackName}-VPC-ID
+
+  DatabaseEndpoint:
+    Description: RDS PostgreSQL endpoint
+    Value: !GetAtt PostgreSQLDatabase.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-DB-Endpoint
+
+  DatabaseConnectionString:
+    Description: Database connection string (without password)
+    Value: !Sub
+      - postgresql://postgres:***@${DatabaseEndpoint}:5432/postgres
+      - DatabaseEndpoint: !GetAtt PostgreSQLDatabase.Endpoint.Address

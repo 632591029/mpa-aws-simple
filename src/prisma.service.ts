@@ -25,6 +25,31 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       // 执行一个简单的查询来验证连接
       await this.$queryRaw`SELECT 1`;
       console.log('✅ Database connection verified');
+
+      // 🎓 学习环境：自动初始化数据库表结构
+      // 注意：生产环境应该用 prisma migrate deploy
+      try {
+        await this.$queryRaw`SELECT 1 FROM "Note" LIMIT 1`;
+        console.log('✅ Database schema exists');
+      } catch (schemaError) {
+        console.log('🔄 Database schema not found, creating tables...');
+        try {
+          // 创建 Note 表
+          await this.$executeRaw`
+            CREATE TABLE IF NOT EXISTS "Note" (
+              "id" SERIAL NOT NULL,
+              "title" TEXT NOT NULL,
+              "content" TEXT NOT NULL,
+              "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              CONSTRAINT "Note_pkey" PRIMARY KEY ("id")
+            )
+          `;
+          console.log('✅ Database schema created successfully');
+        } catch (createError) {
+          console.error('❌ Failed to create schema:', createError);
+        }
+      }
     } catch (error) {
       console.error('❌ Prisma initialization/connection failed:', error);
       // 在 Lambda 环境中，我们可能需要重试

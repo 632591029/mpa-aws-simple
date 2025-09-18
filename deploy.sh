@@ -107,33 +107,21 @@ echo "- Linux binary: $([ -f .aws-sam/build/NestJSFunction/node_modules/.prisma/
 echo "🚀 Deploying to AWS..."
 
 # 检查环境变量
+# 设置默认数据库密码（生产环境请修改）
+DATABASE_PASSWORD=${DATABASE_PASSWORD:-"MySecurePassword123"}
+
+# 如果有.env文件，加载GitHub Token
 if [ -f .env ]; then
-    echo "📋 Loading environment variables from .env file..."
+    echo "📋 Loading GitHub token from .env file..."
     source .env
-    
-    # 验证必需的环境变量
-    if [ -z "$DATABASE_ENDPOINT" ] || [ -z "$DATABASE_USER" ] || [ -z "$DATABASE_PASSWORD" ]; then
-        echo "❌ Missing required database environment variables!"
-        echo "Please set DATABASE_ENDPOINT, DATABASE_USER, and DATABASE_PASSWORD in .env file"
-        exit 1
-    fi
-    
-    echo "✅ Environment variables loaded"
-    echo "- DATABASE_ENDPOINT: ${DATABASE_ENDPOINT}"
-    echo "- DATABASE_USER: ${DATABASE_USER}"
-    echo "- GITHUB_TOKEN: $([ -n "$GITHUB_TOKEN" ] && echo 'Set' || echo 'Not set')"
-else
-    echo "❌ .env file not found!"
-    echo "Please create .env file with required environment variables"
-    echo "You can copy from .env.example and fill in your values"
-    exit 1
 fi
+
+echo "✅ Using database password: ${DATABASE_PASSWORD:0:3}***"
+echo "- GITHUB_TOKEN: $([ -n "$GITHUB_TOKEN" ] && echo 'Set' || echo 'Not set')"
 
 # 使用环境变量部署
 echo "y" | sam deploy \
     --parameter-overrides \
-    DatabaseEndpoint="$DATABASE_ENDPOINT" \
-    DatabaseUser="$DATABASE_USER" \
     DatabasePassword="$DATABASE_PASSWORD" \
     GithubToken="${GITHUB_TOKEN:-''}"
 
