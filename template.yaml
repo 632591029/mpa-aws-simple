@@ -2,51 +2,52 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: NestJS Lambda Application
 
-# Parameters for environment variables
+# 用户输入参数 - 部署时的敏感信息
 Parameters:
-  DatabasePassword:
+  DatabasePassword:    # 【核心】数据库密码，部署时必须提供
     Type: String
     Description: Database password for PostgreSQL
-    NoEcho: true
+    NoEcho: true       # 不在控制台显示明文
     MinLength: 8
     Default: "MySecurePassword123"
-  GithubToken:
+  GithubToken:         # 可选：GitHub API访问令牌
     Type: String
     Description: GitHub personal access token (optional)
     Default: ""
     NoEcho: true
 
+# 【核心】Lambda全局配置 - 影响性能和成本
 Globals:
   Function:
-    Timeout: 30
-    MemorySize: 512
+    Timeout: 30        # 函数超时时间，根据业务调整
+    MemorySize: 512    # 内存大小，影响性能和费用
     Runtime: nodejs20.x
     Architectures:
-      - arm64
+      - arm64          # ARM架构，比x86便宜约20%
 
 Resources:
 
-  # Lambda Layer for common dependencies
+  # 【核心】Lambda Layer - 存放框架依赖，减少应用包大小
   DependenciesLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
       LayerName: !Sub ${AWS::StackName}-dependencies
       Description: Common dependencies layer (excluding Prisma)
-      ContentUri: layers/dependencies/
+      ContentUri: layers/dependencies/    # 指向本地Layer目录
       CompatibleRuntimes:
         - nodejs20.x
       CompatibleArchitectures:
-        - arm64
+        - arm64                           # 必须与Lambda架构匹配
       RetentionPolicy: Delete
     Metadata:
-      BuildMethod: nodejs20.x
+      BuildMethod: nodejs20.x             # SAM如何构建Layer
 
-  # VPC Configuration
+  # 【核心】VPC网络 - 隔离的私有云环境
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsHostnames: true
+      CidrBlock: 10.0.0.0/16           # 私有网络地址段，可容纳65536个IP
+      EnableDnsHostnames: true          # 启用DNS，RDS连接需要
       EnableDnsSupport: true
       Tags:
         - Key: Name
@@ -66,25 +67,25 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
 
-  # Public Subnet (for NAT Gateway)
+  # 公有子网 - 只放NAT网关，不放业务资源
   PublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: 10.0.1.0/24
-      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.1.0/24           # 256个IP地址
+      MapPublicIpOnLaunch: true         # 自动分配公网IP
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-Public-Subnet
 
-  # Private Subnets (for Lambda)
+  # 【核心】私有子网 - Lambda和RDS部署在这里，更安全
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']  # 第1个可用区
+      CidrBlock: 10.0.2.0/24           # 256个IP地址
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-Private-Subnet-1
@@ -93,18 +94,17 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [1, !GetAZs '']
+      AvailabilityZone: !Select [1, !GetAZs '']  # 第2个可用区，高可用
       CidrBlock: 10.0.3.0/24
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-Private-Subnet-2
 
-  # 第三个私有子网 (for Lambda)
   PrivateSubnet3:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [2, !GetAZs '']
+      AvailabilityZone: !Select [2, !GetAZs '']  # 第3个可用区，高可用
       CidrBlock: 10.0.4.0/24
       Tags:
         - Key: Name
@@ -179,33 +179,33 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable1
       SubnetId: !Ref PrivateSubnet3
 
-  # Security Groups
+  # 【核心】安全组 - 网络防火墙规则
   LambdaSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for Lambda function
       VpcId: !Ref VPC
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:             # 出站规则：Lambda可以访问任何地址
+        - IpProtocol: -1              # 所有协议
+          CidrIp: 0.0.0.0/0           # 所有IP
 
   RDSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for RDS database
       VpcId: !Ref VPC
-      SecurityGroupIngress:
+      SecurityGroupIngress:            # 入站规则：只允许Lambda访问数据库
         - IpProtocol: tcp
-          FromPort: 5432
+          FromPort: 5432              # PostgreSQL默认端口
           ToPort: 5432
-          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup  # 只允许Lambda安全组
 
-  # RDS Subnet Group (数据库子网组)
+  # 数据库子网组 - RDS需要跨多个可用区部署
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
       DBSubnetGroupDescription: Subnet group for RDS database
-      SubnetIds:
+      SubnetIds:                       # 跨多个私有子网，保证高可用
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
         - !Ref PrivateSubnet3
@@ -213,89 +213,91 @@ Resources:
         - Key: Name
           Value: !Sub ${AWS::StackName}-db-subnet-group
 
-  # RDS Database Instance (在同一VPC内创建数据库)
+  # 【核心】RDS数据库 - PostgreSQL生产实例
   PostgreSQLDatabase:
     Type: AWS::RDS::DBInstance
     Properties:
       DBInstanceIdentifier: !Sub ${AWS::StackName}-postgres
-      DBInstanceClass: db.t4g.micro  # 最便宜的ARM实例
+      DBInstanceClass: db.t4g.micro     # 【成本】最小ARM实例，可调整
       Engine: postgres
       EngineVersion: '15.14'
-      AllocatedStorage: 20
-      StorageType: gp2
+      AllocatedStorage: 20              # 【存储】GB数，可调整
+      StorageType: gp2                  # 通用SSD
       MasterUsername: postgres
-      MasterUserPassword: !Ref DatabasePassword
+      MasterUserPassword: !Ref DatabasePassword  # 使用部署参数
       DBName: postgres
       VPCSecurityGroups:
-        - !Ref RDSSecurityGroup
+        - !Ref RDSSecurityGroup         # 绑定安全组
       DBSubnetGroupName: !Ref DBSubnetGroup
-      BackupRetentionPeriod: 7
+      BackupRetentionPeriod: 7          # 保疙7天备份
       DeleteAutomatedBackups: true
-      DeletionProtection: false
-      PubliclyAccessible: false  # 只能内网访问
-      StorageEncrypted: true
+      DeletionProtection: false         # 测试环境可删除
+      PubliclyAccessible: false         # 【安全】禁止公网访问
+      StorageEncrypted: true            # 存储加密
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-postgres
 
-  # Lambda Function
+  # 【核心】Lambda函数 - NestJS应用主体
   NestJSFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub ${AWS::StackName}-nestjs-api
-      CodeUri: dist/
-      Handler: lambda.handler
+      CodeUri: dist/                    # 应用代码目录
+      Handler: lambda.handler           # 入口函数
       Layers:
-        - !Ref DependenciesLayer
-      Environment:
+        - !Ref DependenciesLayer        # 绑定Layer，获取框架依赖
+      Environment:                     # 【核心】环境变量 - 应用配置
         Variables:
+          # 【关键】自动生成数据库连接字符串
           DATABASE_URL: !Sub "postgresql://postgres:${DatabasePassword}@${PostgreSQLDatabase.Endpoint.Address}:5432/postgres"
           GITHUB_TOKEN: !Ref GithubToken
-      VpcConfig:
+      VpcConfig:                       # 【安全】网络配置
         SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
+          - !Ref LambdaSecurityGroup     # 绑定安全组
+        SubnetIds:                     # 部署到私有子网
           - !Ref PrivateSubnet1
           - !Ref PrivateSubnet2
           - !Ref PrivateSubnet3
-      Events:
+      Events:                          # 【核心】API触发器
         ApiEvent:
           Type: Api
           Properties:
-            Path: /{proxy+}
-            Method: ANY
+            Path: /{proxy+}            # 捕获所有路径
+            Method: ANY                # 所有HTTP方法
             RestApiId: !Ref ApiGateway
 
-  # API Gateway
+  # 【核心】API Gateway - 对外提供服务的入口
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
-      StageName: prod
-      Cors:
+      StageName: prod                  # 生产环境
+      Cors:                            # 跨域配置，前端需要
         AllowMethods: "'GET,POST,OPTIONS,PUT,DELETE'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-        AllowOrigin: "'*'"
+        AllowOrigin: "'*'"             # 允许所有来源（可修改）
 
+# 【重要】部署后的输出信息 - 你需要的关键地址
 Outputs:
-  ApiGatewayUrl:
+  ApiGatewayUrl:                       # 【最重要】API访问地址
     Description: API Gateway endpoint URL
     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
     Export:
       Name: !Sub ${AWS::StackName}-ApiUrl
 
-  VPCId:
+  VPCId:                               # VPC ID（扩展时需要）
     Description: VPC ID
     Value: !Ref VPC
     Export:
       Name: !Sub ${AWS::StackName}-VPC-ID
 
-  DatabaseEndpoint:
+  DatabaseEndpoint:                    # 数据库地址（调试用）
     Description: RDS PostgreSQL endpoint
     Value: !GetAtt PostgreSQLDatabase.Endpoint.Address
     Export:
       Name: !Sub ${AWS::StackName}-DB-Endpoint
 
-  DatabaseConnectionString:
+  DatabaseConnectionString:            # 数据库连接串（隐藏密码）
     Description: Database connection string (without password)
     Value: !Sub
       - postgresql://postgres:***@${DatabaseEndpoint}:5432/postgres

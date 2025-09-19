@@ -89,25 +89,4 @@ echo "📋 Final verification in SAM build:"
 echo "- Linux binary: $([ -f .aws-sam/build/NestJSFunction/node_modules/.prisma/client/libquery_engine-linux-arm64-openssl-3.0.x.so.node ] && echo '✅' || echo '❌')"
 
 # 8. Deploy with environment variables
-echo "🚀 Deploying to AWS..."
-
-# 设置默认数据库密码（生产环境请修改）
-DATABASE_PASSWORD=${DATABASE_PASSWORD:-"MySecurePassword123"}
-
-# 如果有.env文件，加载GitHub Token
-if [ -f .env ]; then
-    echo "📋 Loading GitHub token from .env file..."
-    source .env
-fi
-
-echo "✅ Using database password: ${DATABASE_PASSWORD:0:3}***"
-echo "- GITHUB_TOKEN: $([ -n "$GITHUB_TOKEN" ] && echo 'Set' || echo 'Not set')"
-
-# 使用环境变量部署
-echo "y" | sam deploy \
-    --parameter-overrides \
-    DatabasePassword="$DATABASE_PASSWORD" \
-    GithubToken="${GITHUB_TOKEN:-''}"
-
-echo "✅ Deployment completed!"
-echo "📋 Check CloudWatch logs if there are any Prisma connection issues."
+echo "✅ Build completed! Run sam deploy to deploy."
